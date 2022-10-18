@@ -1,0 +1,61 @@
+version: "3"
+
+services:
+
+  redis:
+    image: "redis:alpine"
+
+  db:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - db-volume:/var/lib/postgresql/data
+
+  django:
+    build:
+      context: .
+    container_name: django-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.envs/.local/.django
+    volumes:
+      - .:/app
+    command: bash -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  celery:
+    hostname: worker_1
+    build:
+      context: .
+    command: celery -A todo worker -l info
+    env_file:
+      - ./.envs/.local/.django
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - django
+
+  flower:
+    build: .
+    command: bash -c "python3 -m flower -A todo --persistent=True --db=./data-flower/flower.db"
+    volumes:
+      - db-flower:/app/data-flower
+    env_file:
+      - ./.envs/.local/.django
+    ports:
+      - "8888:8888"
+    depends_on:
+      - redis
+
+volumes:
+  db-volume:
+  db-flower:
